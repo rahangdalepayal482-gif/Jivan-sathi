@@ -96,12 +96,6 @@ section[data-testid="stSidebar"]{background:#fbf9f3;border-right:1px solid #e7e1
 [class*="st-key-card_"] p strong{color:#203c36;font-size:19px}
 .st-key-card_sch{--tile:#e1f0ec;--ic:#267a69}.st-key-card_car{--tile:#fbe7de;--ic:#d1693b}
 .st-key-card_plan{--tile:#fbefcf;--ic:#b98a1b}.st-key-card_ask{--tile:#e0ecf8;--ic:#3b73b8}
-.st-key-fab{position:fixed;top:10px;right:10px;z-index:1000;display:flex!important;flex-direction:row!important;align-items:center;gap:8px!important;width:auto!important}
-.st-key-fab [data-testid="stElementContainer"],.st-key-fab [class*="stElementContainer"]{width:auto!important}
-.st-key-fabh a{background:#267a69;border-radius:12px;padding:.5rem .85rem;text-decoration:none}
-.st-key-fabh a p,.st-key-fabh a span{color:#fff!important;font-weight:700}
-.st-key-fab button{background:#fffefa;border:1px solid #e7e1d4;border-radius:12px;min-height:2.5rem}
-@media(min-width:769px){.st-key-fab{display:none!important}}
 @media(max-width:768px){.block-container{padding-top:4.2rem!important}}
 </style>"""
 
@@ -329,11 +323,4 @@ with st.sidebar:
     st.selectbox("🌐", list(LANGS), key="lang")
     st.markdown(f"<div class='tp'><b>🛡️ {t('tp')}</b><br>{t('tpd')}</div>", unsafe_allow_html=True)
     st.page_link(P["acct"], label=t("prof") if S.user else t("signin"), icon=ICONS["acct"] if S.user else ":material/login:")
-with st.container(key="fab"):
-    with st.container(key="fabh"):
-        st.page_link(P["home"], label=t("home"), icon=":material/arrow_back:")
-    with st.popover(":material/menu:"):
-        for k in ["home", "ask", "sch", "car", "plan"]:
-            st.page_link(P[k], label=t(k), icon=ICONS[k])
-        st.page_link(P["acct"], label=t("prof") if S.user else t("signin"), icon=ICONS["acct"] if S.user else ":material/login:")
 pg.run()
