@@ -1,67 +1,20 @@
-import hashlib, json, os, secrets, sqlite3, uuid
+import hashlib, html, json, os, re, secrets, sqlite3, uuid
 from datetime import date
+from pathlib import Path
 import streamlit as st
 
 st.set_page_config(page_title="Jeevan Saathi AI", page_icon="🌱", initial_sidebar_state="auto")
-DB = "jsa.db"
 S = st.session_state
+I18N = json.loads((Path(__file__).parent / "i18n.json").read_text(encoding="utf-8"))
+LANGS = ["English", "हिन्दी", "मराठी"]
+esc = html.escape
+S.setdefault("lang", "English")
+L = S.lang
 
-T = {
-"en": dict(home="Home", ask="Ask Saathi", sch="Schemes", car="Careers", plan="Planner", acct="Account",
-  h1="A little guidance. A lot more possible.", sub="Find a benefit, plan your learning, or talk through what's next, one clear step at a time.",
-  age="Your age", grp="Who is it for?", chk="Check", found="Possible matches", none="No match. Try another group or age.",
-  q="Search", add="Add", task="What would you like to do?", prog="steps completed", save="Add to planner", saved="Added to planner ✓",
-  ph="Write your question…", greet="Namaste. I'm Saathi. What would you like help thinking through today?",
-  user="Username", pw="Password", login="Log in", reg="Create account", out="Log out", hi="Hello",
-  bad="Wrong username or password", taken="Username already taken", short="Enter a username and a password of 6+ characters",
-  note="Sample information only. Verify details with official sources.", All="All",
-  Students="Students", Jobseekers="Job seekers", Women="Women", Seniors="Senior citizens", strengths="Useful strengths"),
-"hi": dict(home="होम", ask="साथी से पूछें", sch="योजनाएँ", car="करियर", plan="प्लानर", acct="खाता",
-  h1="थोड़ा मार्गदर्शन। बहुत कुछ संभव।", sub="लाभ खोजें, पढ़ाई की योजना बनाएँ या आगे की बात करें, एक-एक कदम।",
-  age="आपकी उम्र", grp="किसके लिए?", chk="जाँचें", found="संभावित विकल्प", none="कोई विकल्प नहीं मिला। दूसरा वर्ग या उम्र आज़माएँ।",
-  q="खोजें", add="जोड़ें", task="आप क्या करना चाहेंगे?", prog="कदम पूरे", save="प्लानर में जोड़ें", saved="प्लानर में जुड़ गया ✓",
-  ph="अपना सवाल लिखें…", greet="नमस्ते। मैं साथी हूँ। आज किस बात में मदद चाहिए?",
-  user="यूज़रनेम", pw="पासवर्ड", login="लॉग इन", reg="खाता बनाएँ", out="लॉग आउट", hi="नमस्ते",
-  bad="यूज़रनेम या पासवर्ड गलत है", taken="यह यूज़रनेम पहले से है", short="यूज़रनेम और 6+ अक्षर का पासवर्ड डालें",
-  note="केवल उदाहरण जानकारी। विवरण आधिकारिक स्रोत से जाँचें।", All="सभी",
-  Students="विद्यार्थी", Jobseekers="नौकरी खोजने वाले", Women="महिलाएँ", Seniors="वरिष्ठ नागरिक", strengths="उपयोगी ताकतें"),
-"mr": dict(home="मुख्यपृष्ठ", ask="साथीला विचारा", sch="योजना", car="करिअर", plan="प्लॅनर", acct="खाते",
-  h1="थोडे मार्गदर्शन. खूप काही शक्य.", sub="लाभ शोधा, अभ्यासाचे नियोजन करा किंवा पुढच्या गोष्टींवर बोला, एकेक पाऊल.",
-  age="तुमचे वय", grp="कोणासाठी?", chk="तपासा", found="संभाव्य पर्याय", none="पर्याय सापडला नाही. दुसरा गट किंवा वय वापरा.",
-  q="शोधा", add="जोडा", task="तुम्हाला काय करायचे आहे?", prog="पावले पूर्ण", save="प्लॅनरमध्ये जोडा", saved="प्लॅनरमध्ये जोडले ✓",
-  ph="तुमचा प्रश्न लिहा…", greet="नमस्कार. मी साथी. आज कशात मदत हवी?",
-  user="युजरनेम", pw="पासवर्ड", login="लॉग इन", reg="खाते तयार करा", out="लॉग आउट", hi="नमस्कार",
-  bad="युजरनेम किंवा पासवर्ड चुकीचा", taken="हे युजरनेम आधीच आहे", short="युजरनेम आणि 6+ अक्षरी पासवर्ड टाका",
-  note="फक्त नमुना माहिती. तपशील अधिकृत स्रोतावर तपासा.", All="सर्व",
-  Students="विद्यार्थी", Jobseekers="नोकरी शोधणारे", Women="महिला", Seniors="ज्येष्ठ नागरिक", strengths="उपयुक्त ताकद"),
-}
-LANGS = {"English": "en", "हिन्दी": "hi", "मराठी": "mr"}
+def t(key):
+    en = key.split(":", 1)[1] if ":" in key else key
+    return en if L == "English" else I18N[L].get(key, en)
 
-T["en"].update(acct="Profile", eb="✨ YOUR NEXT STEP STARTS HERE", talk="Talk to Saathi", exp="Explore support", begin="Where would you like to begin?")
-T["hi"].update(acct="प्रोफ़ाइल", eb="✨ आपका अगला कदम यहाँ से शुरू", talk="साथी से बात करें", exp="सहायता खोजें", begin="आप कहाँ से शुरू करना चाहेंगे?")
-T["mr"].update(acct="प्रोफाइल", eb="✨ तुमचे पुढचे पाऊल इथून सुरू", talk="साथीशी बोला", exp="मदत शोधा", begin="तुम्हाला कुठून सुरू करायचे आहे?")
-CARDS = {
- "sch": {"en": ("Find a support scheme", "Explore sample benefits and check basic eligibility."),
-         "hi": ("सहायता योजना खोजें", "उदाहरण लाभ देखें और पात्रता जाँचें।"),
-         "mr": ("मदत योजना शोधा", "नमुना लाभ पहा आणि पात्रता तपासा.")},
- "car": {"en": ("Explore your next career", "Learning paths, work options and practical next steps."),
-         "hi": ("अपना अगला करियर खोजें", "सीखने के रास्ते, काम के विकल्प और अगले कदम।"),
-         "mr": ("तुमचे पुढील करिअर शोधा", "शिकण्याचे मार्ग, कामाचे पर्याय आणि पुढची पावले.")},
- "plan": {"en": ("Build a steady routine", "Turn a big goal into small tasks you can finish."),
-          "hi": ("नियमित दिनचर्या बनाएँ", "बड़े लक्ष्य को छोटे कामों में बाँटें।"),
-          "mr": ("नियमित दिनक्रम बनवा", "मोठे ध्येय लहान कामांत विभागा.")},
- "ask": {"en": ("Ask what's on your mind", "Try a sample conversation and get a place to start."),
-         "hi": ("अपने मन की बात पूछें", "एक नमूना बातचीत करें और शुरुआत पाएँ।"),
-         "mr": ("मनातले विचारा", "नमुना संभाषण करा आणि सुरुवात मिळवा.")},
-}
-T["en"].update(sch="Schemes & support", plan="My planner", prof="Profile & settings", signin="Sign in", guide="YOUR GUIDE", mine="MAKE IT YOURS", choose="Choose a path that feels right",
-  priv="Private by design in this demo. Your information stays in this browser.", tp="A thoughtful starting point", tpd="Examples are for guidance. Confirm details with the official service before acting.")
-T["hi"].update(sch="योजनाएँ और सहायता", plan="मेरा प्लानर", prof="प्रोफ़ाइल और सेटिंग्स", signin="साइन इन", guide="आपका मार्गदर्शक", mine="इसे अपना बनाएँ", choose="ऐसा रास्ता चुनें जो सही लगे",
-  priv="इस डेमो में आपकी जानकारी निजी रहती है और इसी ब्राउज़र में रहती है।", tp="सोच-समझकर शुरुआत", tpd="उदाहरण केवल मार्गदर्शन के लिए हैं। कदम उठाने से पहले आधिकारिक सेवा से विवरण जाँचें।")
-T["mr"].update(sch="योजना आणि मदत", plan="माझा प्लॅनर", prof="प्रोफाइल आणि सेटिंग्ज", signin="साइन इन", guide="तुमचा मार्गदर्शक", mine="हे तुमचे करा", choose="तुम्हाला योग्य वाटेल असा मार्ग निवडा",
-  priv="या डेमोमध्ये तुमची माहिती खाजगी राहते आणि याच ब्राउझरमध्ये राहते.", tp="विचारपूर्वक सुरुवात", tpd="उदाहरणे फक्त मार्गदर्शनासाठी आहेत. कृती करण्यापूर्वी अधिकृत सेवेकडून तपशील तपासा.")
-EB = {"sch": dict(en="SUPPORT", hi="सहायता", mr="मदत"), "car": dict(en="WORK & LEARNING", hi="काम और सीख", mr="काम आणि शिक्षण"),
-      "plan": dict(en="ROUTINE", hi="दिनचर्या", mr="दिनक्रम"), "ask": dict(en="CONVERSATION", hi="बातचीत", mr="संवाद")}
 CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 html,body,.stApp,button,input{font-family:Inter,system-ui,sans-serif}
@@ -94,30 +47,65 @@ section[data-testid="stSidebar"]{background:#fbf9f3;border-right:1px solid #e7e1
 [class*="st-key-card_"] p{white-space:pre-line;color:#758079;font-size:13.5px;line-height:1.55;margin:0}
 [class*="st-key-card_"] p::first-line{font-size:10.5px;font-weight:800;letter-spacing:.14em}
 [class*="st-key-card_"] p strong{color:#203c36;font-size:19px}
-.st-key-card_sch{--tile:#e1f0ec;--ic:#267a69}.st-key-card_car{--tile:#fbe7de;--ic:#d1693b}
-.st-key-card_plan{--tile:#fbefcf;--ic:#b98a1b}.st-key-card_ask{--tile:#e0ecf8;--ic:#3b73b8}
-@media(max-width:768px){.block-container{padding-top:4.2rem!important}}
-</style>"""
 
-# (title, group key, tag, min_age, max_age, description)
+
+
+
+.st-key-card_sch{--tile:#e9f1eb;--ic:#286c5e}.st-key-card_car{--tile:#fbede3;--ic:#a75d3b}
+.st-key-card_plan{--tile:#f6efdb;--ic:#967431}.st-key-card_ask{--tile:#e8eef0;--ic:#4c7079}
+.ph h1{font-size:2.2rem;font-weight:800;margin:.35rem 0 .3rem;letter-spacing:-.02em;color:#203c36;padding:0}
+.mute{color:#758079;font-size:14px;line-height:1.6}
+.h2{font-size:1.7rem;font-weight:800;margin:.2rem 0 .4rem;color:#203c36;padding:0}
+[class*="st-key-sc_"],[class*="st-key-cc_"],.st-key-quick,.st-key-chatbox,.st-key-plancard,.st-key-profcard,.st-key-authcard,.st-key-stat1,.st-key-stat2{background:#fffefa;border:1px solid #e7e1d4;border-radius:20px;padding:20px;margin-bottom:6px}
+.st-key-quick{margin-top:18px}
+.tilerow{display:flex;justify-content:space-between;align-items:flex-start}
+.tile{width:48px;height:48px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;font-size:22px}
+.tag{display:inline-block;background:#e9efe9;color:#267a69;font-size:10px;font-weight:800;letter-spacing:.1em;padding:5px 10px;border-radius:99px;margin:2px 4px 2px 0}
+.ct{font-size:1.2rem;font-weight:800;margin:12px 0 4px;color:#203c36;padding:0}
+.for{font-size:12px;color:#77837b;border-top:1px solid #eee8dc;padding-top:12px;margin-top:8px}
+.careerhero{background:#ebeee5;border-radius:23px;padding:26px 24px;margin:14px 0 6px}
+.res{background:#f1f7f0;border:1px solid #d9e8dc;border-radius:14px;padding:14px;margin-top:12px;color:#236b5c}
+.ck{font-size:13px;color:#4b6b5a;margin:6px 0}
+.avatar{width:56px;height:56px;border-radius:50%;background:#267a69;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:800;flex:none}
+</style>"""
+st.markdown(CSS, unsafe_allow_html=True)
+
+# ---------- data (from the original React app) ----------
+INTRO = "Namaste. I’m Saathi, a sample guidance companion. What would you like help thinking through today?"
 SCHEMES = [
- ("Education support", "Students", "LEARNING", 5, 30, "Illustrative fee assistance and scholarship pathways for eligible learners."),
- ("Skill development", "Jobseekers", "SKILLS", 18, 45, "Examples of training and placement support that may be available locally."),
- ("Women's livelihood support", "Women", "LIVELIHOOD", 18, 70, "Enterprise, self-help group and livelihood resources to explore."),
- ("Senior citizen services", "Seniors", "WELLBEING", 60, 120, "Examples of care, wellbeing and pension information to verify with local offices."),
+ dict(title="Education support", cat="Students", emoji="🎓", tone="#edf2e7", ic="#6d8755", tag="LEARNING", aud="Students and learners", kw="student education learning", desc="Illustrative fee assistance and scholarship pathways for eligible learners."),
+ dict(title="Skill development", cat="Job seekers", emoji="💼", tone="#e8eff0", ic="#547b7c", tag="SKILLS", aud="Youth and job seekers", kw="job seeker skills work", desc="Examples of training and placement support that may be available locally."),
+ dict(title="Women’s livelihood support", cat="Women", emoji="🤝", tone="#faeee6", ic="#b36c46", tag="LIVELIHOOD", aud="Women and entrepreneurs", kw="women livelihood business", desc="A starting point for exploring enterprise, self-help group and livelihood resources."),
+ dict(title="Senior citizen services", cat="Senior citizens", emoji="🧓", tone="#f5efdf", ic="#a08036", tag="WELLBEING", aud="Older adults and caregivers", kw="senior citizen pension care", desc="Examples of care, wellbeing and pension information to verify with local offices."),
 ]
 CAREERS = [
- ("Community health worker", "Community service", "Communication, care, local knowledge", "Local public-health and outreach training pathways."),
- ("Solar installation trainee", "Skilled trades", "Practical learning, safety, teamwork", "Vocational courses and apprenticeships in clean-energy work."),
- ("Digital services assistant", "Digital work", "Computer basics, communication, accuracy", "Build digital confidence through a local centre or trusted course."),
- ("Small business / self-help group", "Self-employment", "Planning, craft, customer care", "Local enterprise support and peer-led self-help networks."),
+ dict(role="Community health worker", type="Community service", mark="COMMUNITY", skills="Communication · Care · Local knowledge", detail="Explore local public-health and community outreach training pathways."),
+ dict(role="Solar installation trainee", type="Skilled trades", mark="TECHNICAL", skills="Practical learning · Safety · Teamwork", detail="Look into vocational courses and apprenticeships in clean-energy work."),
+ dict(role="Digital services assistant", type="Digital work", mark="DIGITAL", skills="Computer basics · Communication · Accuracy", detail="Build digital confidence through a local training centre or trusted course."),
+ dict(role="Small business / self-help group", type="Self-employment", mark="ENTERPRISE", skills="Planning · Craft · Customer care", detail="Explore local enterprise support and peer-led self-help networks."),
 ]
+HOME_CARDS = [
+ ("sch", ":material/account_balance_wallet:", "SUPPORT", "Find a support scheme", "Explore sample benefits and check a few basic eligibility details."),
+ ("car", ":material/work:", "WORK & LEARNING", "Explore your next career", "Look at learning paths, work options and practical next steps."),
+ ("plan", ":material/calendar_month:", "YOUR PLAN", "Build a steady routine", "Turn a big goal into small tasks you can actually finish."),
+ ("ask", ":material/chat_bubble:", "ASK SAATHI", "Ask what’s on your mind", "Try a sample conversation and get a useful place to start."),
+]
+DEFAULT_TASKS = [
+ {"id": "task-focus", "text": "Review one study topic", "time": "Today · 25 min", "done": False},
+ {"id": "task-break", "text": "Take a screen-free break", "time": "Today · 10 min", "done": False},
+ {"id": "task-next", "text": "Write down one question to ask", "time": "Today · 5 min", "done": True},
+]
+S.setdefault("user", None); S.setdefault("name", ""); S.setdefault("careers", [])
+S.setdefault("msgs", []); S.setdefault("checked", False); S.setdefault("saved", False)
+S.setdefault("tasks", [dict(x) for x in DEFAULT_TASKS])
 
-# ---------- storage (SQLite; resets if the host wipes its disk) ----------
+# ---------- storage (SQLite file; Streamlit Cloud may reset it on restart) ----------
+DB = "jsa.db"
+
 def db():
     c = sqlite3.connect(DB)
     c.execute("create table if not exists users(name text primary key, salt text, pw text)")
-    c.execute("create table if not exists tasks(name text primary key, data text)")
+    c.execute("create table if not exists kv(name text, k text, v text, primary key(name,k))")
     return c
 
 def hp(p, salt):
@@ -136,28 +124,41 @@ def check_login(u, p):
         r = c.execute("select salt,pw from users where name=?", (u,)).fetchone()
     return bool(r) and secrets.compare_digest(hp(p, r[0]), r[1])
 
-def save_tasks():
+def kv_get(k, default=None):
+    with db() as c:
+        r = c.execute("select v from kv where name=? and k=?", (S.user, k)).fetchone()
+    return json.loads(r[0]) if r else default
+
+def save_all():
     if S.user:
         with db() as c:
-            c.execute("insert or replace into tasks values(?,?)", (S.user, json.dumps(S.tasks)))
+            c.execute("insert or replace into kv values(?,?,?)", (S.user, "tasks", json.dumps(S.tasks)))
+            c.execute("insert or replace into kv values(?,?,?)", (S.user, "prefs", json.dumps({"name": S.name, "careers": S.careers})))
 
-def load_tasks(u):
-    with db() as c:
-        r = c.execute("select data from tasks where name=?", (u,)).fetchone()
-    return json.loads(r[0]) if r else None
+def sign_in(u):
+    S.user = u
+    prefs = kv_get("prefs", {})
+    S.name = prefs.get("name", S.name); S.careers = prefs.get("careers", S.careers)
+    saved = kv_get("tasks")
+    if saved and all("text" in x for x in saved):
+        S.tasks = saved
+    save_all()
+
+def sign_out():
+    S.update(user=None, name="", careers=[], msgs=[], tasks=[dict(x) for x in DEFAULT_TASKS])
 
 # ---------- assistant ----------
-def fallback(q):
-    q = q.lower()
-    if any(w in q for w in ("job", "career", "work", "skill", "course", "नौकरी", "करियर", "नोकरी")):
-        return "Name the work you enjoy and the skills you already use, then look for a local skill centre or apprenticeship and check official dates. See the Careers page."
-    if any(w in q for w in ("scheme", "money", "benefit", "support", "student", "family", "योजना")):
-        return "Support depends on age, location and household. Use the Schemes page to see examples, then confirm on the official portal or a service centre."
-    if any(w in q for w in ("study", "exam", "plan", "learn", "पढ़ाई", "अभ्यास")):
-        return "Make the goal small: one topic, a 25-minute focus block, then 5 minutes to note what you understood. Add it to the Planner."
-    if any(w in q for w in ("safety", "danger", "women", "help")):
-        return "If you are in immediate danger, call 112 or someone you trust now. For non-urgent help, a local women's helpline or support group can explain your options."
-    return "Thanks for sharing. Decide what matters most right now, then check one trusted official source. I can help with schemes, careers or a simple plan."
+def sample_answer(q):
+    v = q.lower()
+    if re.search(r"job|career|work|skill", v):
+        return "A helpful first step is to name the kind of work you enjoy and the skills you already use. You could explore a local skill-development centre or apprenticeship option, then check the official eligibility and dates. Want to add a career research task to your planner?"
+    if re.search(r"scheme|money|benefit|support|student", v):
+        return "There may be different support options depending on your age, location, household and current situation. Start with the Schemes page to see illustrative examples, then confirm details on the relevant official portal or at a nearby service centre."
+    if re.search(r"study|exam|plan|learn", v):
+        return "Try making the goal smaller: choose one topic, set a 25-minute focus block, and leave five minutes to note what you understood. The planner can help you keep a gentle daily rhythm."
+    if re.search(r"women|safety|help", v):
+        return "If you are in immediate danger, contact local emergency services (112 in India) or someone you trust now. For non-urgent support, a nearby women’s support organisation or official helpline can help you understand your options. I can help you make a list of questions to ask."
+    return "Thanks for sharing that. A good next step is to clarify what matters most right now, then find one trusted local or official source to check. I can help you explore support schemes, work and learning options, or make a simple plan."
 
 def ai(history):
     try:
@@ -167,143 +168,241 @@ def ai(history):
     if key:
         try:
             import anthropic
-            lang = {"en": "English", "hi": "Hindi", "mr": "Marathi"}[L]
             r = anthropic.Anthropic(api_key=key).messages.create(
                 model=os.environ.get("JSA_MODEL", "claude-sonnet-5-5"), max_tokens=500,
-                system=f"You are Saathi, a kind guidance companion for students, job seekers, women and senior citizens in India. "
-                       f"Reply briefly in {lang}. Give examples, not guarantees; tell people to verify with official sources. "
-                       f"If someone may be in danger, advise calling 112.", messages=history)
+                system="You are Saathi, a kind guidance companion for students, job seekers, women and senior citizens in India. "
+                       f"Reply briefly in {L}. Give examples, not guarantees; tell people to verify with official sources. "
+                       "If someone may be in danger, advise calling 112.", messages=history)
             return r.content[0].text
         except Exception:
             pass
-    return fallback(history[-1]["content"])
+    return sample_answer(history[-1]["content"])
 
-# ---------- state / sidebar ----------
-S.setdefault("user", None); S.setdefault("page", "home"); S.setdefault("msgs", [])
-S.setdefault("tasks", [{"id": "a", "t": "Review one study topic", "m": "25 min", "d": False},
-                       {"id": "b", "t": "Take a screen-free break", "m": "10 min", "d": False}])
-st.markdown(CSS, unsafe_allow_html=True)
-L = LANGS[S.get("lang", "English")]
-t = lambda k: T[L].get(k, T["en"].get(k, k))
-ICONS = dict(home=":material/explore:", ask=":material/chat_bubble:", sch=":material/account_balance_wallet:",
-             car=":material/work:", plan=":material/calendar_month:", acct=":material/person:")
-CI = dict(sch=":material/inbox:", car=":material/work:", plan=":material/calendar_month:", ask=":material/chat_bubble:")
+# ---------- small UI helpers ----------
+def head(e, ti, d):
+    st.markdown(f"<div class='ph'><div class='eb'>{t('head:' + e)}</div><h1>{t('head:' + ti)}</h1><p class='mute'>{t('head:' + d)}</p></div>", unsafe_allow_html=True)
+
+def caveat():
+    st.markdown(f"<div class='warn'><b>{t('common:Sample information only.')}</b> "
+                f"{t('common:This demo is not connected to live AI, government databases, or current job listings. Please verify requirements, dates and eligibility with official sources.')}</div>", unsafe_allow_html=True)
+
+def row_head(eyebrow, title):
+    st.markdown(f"<div class='eb' style='margin-top:26px'>{eyebrow}</div><h2 class='h2'>{title}</h2>", unsafe_allow_html=True)
 
 # ---------- pages ----------
 def p_home():
+    a, b = st.columns([3, 2], vertical_alignment="center")
+    a.markdown(f"<div class='eb'>{date.today().strftime('%A, %d %B')}</div>", unsafe_allow_html=True)
+    with b:
+        st.page_link(P["profile"], label=t("dashboard:Your space, your pace"), icon=":material/notifications:")
+    welcome = t("dashboard:Welcome") + ((", " + esc(S.name)) if S.name else "") + ". "
+    h1 = t("dashboard:A little guidance.") + "<br>" + t("dashboard:A lot more possible.")
     with st.container(key="hero"):
-        st.markdown(f"<span class='pill'>✦ {t('eb').replace('✨ ', '')}</span>"
-                    f"<div class='h1'>{t('h1').replace('. ', '.<br>').replace('। ', '।<br>')}</div>"
-                    f"<p class='hp'>{(S.user + ', ') if S.user else ''}{t('sub')}</p>", unsafe_allow_html=True)
+        st.markdown(f"<span class='pill'>✦ {t('dashboard:YOUR NEXT STEP STARTS HERE')}</span><div class='h1'>{h1}</div>"
+                    f"<p class='hp'>{welcome}{t('dashboard:Find a benefit, plan your learning, or talk through what comes next — one clear step at a time.')}</p>", unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1, st.container(key="hb1"):
-            st.page_link(P["ask"], label=t("talk") + " →")
+            st.page_link(P["ask"], label=t("dashboard:Talk to Saathi") + " →")
         with c2, st.container(key="hb2"):
-            st.page_link(P["sch"], label=t("exp"))
-        st.markdown(f"<div class='priv'>🛡️ {t('priv')}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='sec'><div><div class='eb'>{t('mine')}</div><h2>{t('begin')}</h2></div>"
-                f"<span class='mute'>{t('choose')}</span></div>", unsafe_allow_html=True)
-    for row in (["sch", "car"], ["plan", "ask"]):
-        for col, k in zip(st.columns(2), row):
-            ti, de = CARDS[k][L]
+            st.page_link(P["sch"], label=t("dashboard:Explore support"))
+        st.markdown(f"<div class='priv'>🛡️ {t('dashboard:Private by design in this demo. Your information stays in this browser.')}</div>", unsafe_allow_html=True)
+    row_head(t("dashboard:Make it yours"), t("dashboard:Where would you like to begin?"))
+    st.caption(t("dashboard:Choose a path that feels right"))
+    for pair in (HOME_CARDS[:2], HOME_CARDS[2:]):
+        for col, (k, ic, tag, label, note) in zip(st.columns(2), pair):
             with col, st.container(key="card_" + k):
-                st.page_link(P[k], label=f"{EB[k][L]}\n**{ti}**\n{de}", icon=CI[k])
-
-
+                st.page_link(P[k], label=f"{t('dashboard:' + tag)}\n**{t('dashboard:' + label)}**\n{t('dashboard:' + note)}", icon=ic)
+    st.markdown(f"<div class='card'><div class='eb'>{t('dashboard:A thought for today')}</div><h2 class='h2'>{t('dashboard:Small steps still move you forward.')}</h2>"
+                f"<p class='mute'>{t('dashboard:You don’t need to figure everything out today. Choose one thing that matters, and give it a little attention.')}</p></div>", unsafe_allow_html=True)
+    st.page_link(P["plan"], label=t("dashboard:Plan one small thing") + " →")
+    caveat()
 
 def p_ask():
-    st.header(t("ask"))
-    st.chat_message("assistant").write(t("greet"))
-    for m in S.msgs:
-        st.chat_message(m["role"]).write(m["content"])
-    if q := st.chat_input(t("ph")):
+    head("A friendly place to start", "Ask Saathi", "Talk through a question, find a starting point, or make a plan. Responses here are examples, not live AI advice.")
+    main, side = st.columns([2, 1])
+    pending = None
+    with main, st.container(key="chatbox"):
+        h, x = st.columns([6, 1], vertical_alignment="center")
+        h.markdown(f"🌱 **Saathi**<br><span class='mute'>● {t('common:Sample mode · No live service')}</span>", unsafe_allow_html=True)
+        if x.button("✕", key="reset", help="Start a fresh conversation"):
+            S.msgs = []; st.rerun()
+        st.chat_message("assistant").write(INTRO)
+        for m in S.msgs:
+            st.chat_message(m["role"]).write(m["content"])
+        if not S.msgs:
+            st.caption(t("common:Try asking about"))
+            for i, s in enumerate(["Finding a skill course", "Planning my studies", "Support for my family"]):
+                if st.button(t("common:" + s), key=f"sg{i}"):
+                    pending = s
+    with side:
+        caveat()
+        items = "".join(f"<div class='ck'>✓ {t(k)}</div>" for k in ["common:Ask in your own words", "common:Keep personal details private", "common:Double-check key information"])
+        st.markdown(f"<div class='card'><div class='eb'>Keep in mind</div><h3 class='ct'>{t('common:Your choices matter.')}</h3>"
+                    f"<p class='mute'>Saathi helps you explore a next step. For important decisions, verify information with a trusted person or official source.</p>{items}</div>", unsafe_allow_html=True)
+        st.page_link(P["plan"], label=f"{t('common:Ready to act?')}\n**{t('common:Make a small plan')}** →", icon=":material/calendar_month:")
+    q = st.chat_input(t("common:Write your question…")) or pending
+    if q:
         S.msgs.append({"role": "user", "content": q})
         with st.spinner("…"):
             S.msgs.append({"role": "assistant", "content": ai(S.msgs)})
         st.rerun()
 
-
 def p_sch():
-    st.header(t("sch"))
-    c1, c2 = st.columns(2)
-    age = c1.number_input(t("age"), 1, 120, 25)
-    grp = c2.selectbox(t("grp"), ["All", "Students", "Jobseekers", "Women", "Seniors"], format_func=t)
-    word = st.text_input(t("q"))
-    hits = [s for s in SCHEMES if (grp == "All" or s[1] == grp) and s[3] <= age <= s[4]
-            and word.lower() in " ".join(map(str, s)).lower()]
-    st.subheader(t("found"))
-    for s in hits:
-        with st.container(border=True):
-            st.markdown(f"**{s[0]}** · `{s[2]}` · {t(s[1])}")
-            st.write(s[5])
-    if not hits:
-        st.warning(t("none"))
-    st.caption(t("note"))
-
+    head("Find a helpful starting point", "Support that meets you here", "Explore a few illustrative support categories and use the simple checker to think about what to ask next.")
+    caveat()
+    with st.container(key="quick"):
+        st.markdown(f"<div class='eb'>{t('scheme:Quick private check')}</div><h2 class='h2'>{t('scheme:What kind of support are you looking for?')}</h2>"
+                    "<p class='mute'>This is a sample matching tool, not an official eligibility decision. Your entries are not sent anywhere.</p>", unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        age = c1.selectbox(t("scheme:Your age group"), ["", "Under 18", "18–29", "30–59", "60+"], format_func=lambda a: a or t("scheme:Choose one"))
+        state = c2.text_input(t("scheme:State or union territory"), placeholder=t("scheme:For example, Maharashtra"))
+        if st.button(t("common:Show sample starting points"), type="primary", use_container_width=True):
+            S.checked = True
+        if S.checked:
+            pick = [s for s in SCHEMES if not age or (s["cat"] == "Senior citizens") == (age == "60+")][:3]
+            pills = " ".join(f"<span class='tag'>{s['title']}</span>" for s in pick)
+            where = (f" ({age})" if age else "") + (f" in {esc(state)}" if state else "")
+            st.markdown(f"<div class='res'><b>✓ {t('common:A few places to begin')}</b><p class='mute'>Based on the details you entered{where}, explore the examples below. "
+                        f"This is not a confirmed match or eligibility result; check with an official source.</p>{pills}</div>", unsafe_allow_html=True)
+    a, b = st.columns([3, 2], vertical_alignment="bottom")
+    a.markdown(f"<div class='eb' style='margin-top:26px'>{t('scheme:Explore by need')}</div><h2 class='h2'>{t('scheme:A few places to begin')}</h2>", unsafe_allow_html=True)
+    q = b.text_input("q", placeholder=t("common:Search examples"), label_visibility="collapsed", key="sq")
+    cat = st.pills("cat", ["Everyone", "Students", "Job seekers", "Women", "Senior citizens"], default="Everyone",
+                   format_func=lambda c: t("filter:" + c), label_visibility="collapsed", key="scat") or "Everyone"
+    items = [s for s in SCHEMES if (cat == "Everyone" or s["cat"] == cat) and q.lower() in f"{s['title']} {s['desc']} {s['kw']}".lower()]
+    cols = st.columns(2)
+    for i, s in enumerate(items):
+        with cols[i % 2], st.container(key=f"sc_{i}"):
+            st.markdown(f"<div class='tilerow'><span class='tile' style='background:{s['tone']};color:{s['ic']}'>{s['emoji']}</span><span class='tag'>{s['tag']}</span></div>"
+                        f"<h3 class='ct'>{s['title']}</h3><p class='mute'>{s['desc']}</p><div class='for'>For: {s['aud']}</div>", unsafe_allow_html=True)
+            with st.expander(t("common:Check example") + " →"):
+                st.write(f"Suitable for: {s['aud']}." + (f" Age group you chose: {age}." if age else "") + (f" State: {state}." if state else "")
+                         + " Confirm eligibility, dates and documents on the official portal or at a nearby service centre.")
+    if not items:
+        st.info("No examples found. Try a different phrase or clear the category filter.")
+        st.button(t("common:Clear filters"), on_click=lambda: S.update(scat="Everyone", sq=""))
 
 def p_car():
-    st.header(t("car"))
-    kinds = ["All"] + [c[1] for c in CAREERS]
-    kind = st.radio("", kinds, horizontal=True, format_func=lambda k: t(k) if k == "All" else k, label_visibility="collapsed")
-    for c in CAREERS:
-        if kind in ("All", c[1]):
-            with st.container(border=True):
-                st.markdown(f"**{c[0]}** · {c[1]}")
-                st.write(c[3])
-                st.caption(f"{t('strengths')}: {c[2]}")
-                if st.button(t("save"), key="s" + c[0]):
-                    S.tasks.insert(0, {"id": uuid.uuid4().hex[:8], "t": "Research: " + c[0], "m": "25 min", "d": False})
-                    save_tasks(); st.toast(t("saved"))
-    st.caption(t("note"))
-
+    head("Work, skills & possibilities", "Build a path that fits you", "Explore career ideas and simple next steps. These are examples for reflection, not live vacancies or placement offers.")
+    caveat()
+    st.markdown("<div class='careerhero'><span class='tag'>START WITH WHAT YOU KNOW</span><h2 class='h2' style='font-size:1.9rem'>Your experience is already a kind of skill.</h2>"
+                "<p class='mute'>Care work, fixing things, helping a neighbour, using a phone — name what you do well. Then find a way to build on it.</p></div>", unsafe_allow_html=True)
+    st.page_link(P["plan"], label="Plan your next step →")
+    a, b = st.columns([3, 2], vertical_alignment="bottom")
+    a.markdown(f"<div class='eb' style='margin-top:26px'>{t('common:Ideas to explore')}</div><h2 class='h2'>{t('common:Paths, not promises')}</h2>", unsafe_allow_html=True)
+    q = b.text_input("q", placeholder=t("common:Search career ideas"), label_visibility="collapsed", key="cq")
+    kinds = ["All paths"] + [c["type"] for c in CAREERS]
+    kind = st.pills("kind", kinds, default="All paths", format_func=lambda k: t("filter:" + k), label_visibility="collapsed", key="ckind") or "All paths"
+    items = [c for c in CAREERS if (kind == "All paths" or c["type"] == kind) and q.lower() in f"{c['role']} {c['type']} {c['skills']}".lower()]
+    cols = st.columns(2)
+    for i, c in enumerate(items):
+        with cols[i % 2], st.container(key=f"cc_{i}"):
+            st.markdown(f"<div class='eb'>{c['mark']}</div><h3 class='ct'>{c['role']}</h3><p class='mute'>{c['detail']}</p>"
+                        f"<div class='for'><div class='eb'>{t('common:Useful strengths')}</div><b style='font-size:13px'>{c['skills']}</b></div>", unsafe_allow_html=True)
+            saved = c["role"] in S.careers
+            if st.button(("✓ " + t("common:Saved to this browser")) if saved else t("common:Keep this in mind"), key=f"cs{i}", type="primary" if saved else "secondary"):
+                S.careers = [r for r in S.careers if r != c["role"]] if saved else S.careers + [c["role"]]
+                save_all(); st.rerun()
+    if not items:
+        st.info("No matches yet. Try a broader search.")
+    st.markdown("<div class='card' style='margin-top:18px'><div class='eb'>Keep learning</div><h3 class='ct'>The next step can be a conversation.</h3>"
+                "<p class='mute'>Ask Saathi to help you think through what you enjoy and what to explore.</p></div>", unsafe_allow_html=True)
+    st.page_link(P["ask"], label=t("common:Talk it through") + " →")
 
 def p_plan():
-    st.header(t("plan"))
-    done = sum(x["d"] for x in S.tasks)
-    st.progress(done / len(S.tasks) if S.tasks else 0.0, text=f"{done}/{len(S.tasks)} {t('prog')}")
-    with st.form("add", clear_on_submit=True):
-        c1, c2 = st.columns([3, 1])
-        txt = c1.text_input(t("task")); mins = c2.selectbox("⏱", ["5 min", "10 min", "25 min", "45 min"], index=2)
-        if st.form_submit_button(t("add")) and txt.strip():
-            S.tasks.insert(0, {"id": uuid.uuid4().hex[:8], "t": txt.strip(), "m": mins, "d": False})
-            save_tasks(); st.rerun()
-    for x in list(S.tasks):
-        a, b = st.columns([6, 1])
-        new = a.checkbox(f"{x['t']} · {x['m']}", value=x["d"], key="c" + x["id"])
-        if new != x["d"]:
-            x["d"] = new; save_tasks(); st.rerun()
-        if b.button("✕", key="x" + x["id"]):
-            S.tasks.remove(x); save_tasks(); st.rerun()
-    if not S.user:
-        st.caption("Log in (Account) to keep your tasks saved.")
+    head("A gentle rhythm, built by you", "Your planner", "Keep your next steps small and doable. Your tasks are saved only in this browser.")
+    d, n = sum(x["done"] for x in S.tasks), len(S.tasks)
+    prog = {"English": f"{d} of {n} steps completed", "हिन्दी": f"{n} में से {d} कदम पूरे", "मराठी": f"{n} पैकी {d} पावले पूर्ण"}[L]
+    c1, c2 = st.columns(2)
+    with c1, st.container(key="stat1"):
+        st.markdown(f"<div class='eb'>{t('common:Today’s progress')}</div><h3 class='ct' style='margin-top:6px'>{prog}</h3>", unsafe_allow_html=True)
+        st.progress(d / n if n else 0.0)
+    with c2, st.container(key="stat2"):
+        st.markdown(f"<div class='eb'>{t('common:A REMINDER')}</div><h3 class='ct' style='margin-top:6px'>{t('common:One thing at a time.')}</h3>", unsafe_allow_html=True)
+    main, side = st.columns([2, 1])
+    with main, st.container(key="plancard"):
+        st.markdown(f"<div class='eb'>{t('common:Your to-do list')}</div><h2 class='h2'>{t('common:A few meaningful steps')}</h2>"
+                    f"<p class='mute'>{n} {t('common:task' if n == 1 else 'common:tasks')}</p>", unsafe_allow_html=True)
+        with st.form("addtask", clear_on_submit=True):
+            a, b, c = st.columns([5, 3, 3], vertical_alignment="bottom")
+            txt = a.text_input(t("common:Add a task"), placeholder=t("common:What would you like to do?"))
+            mins = b.selectbox("⏱", ["5 min", "10 min", "25 min", "45 min"], index=2)
+            ok = c.form_submit_button("+ " + t("common:Add"), use_container_width=True)
+        if ok and txt.strip():
+            S.tasks.insert(0, {"id": uuid.uuid4().hex[:8], "text": txt.strip(), "time": "Today · " + mins, "done": False})
+            S.saved = False; save_all(); st.rerun()
+        for x in list(S.tasks):
+            a, b = st.columns([8, 1], vertical_alignment="center")
+            label = ("~~" + x["text"] + "~~") if x["done"] else x["text"]
+            new = a.checkbox(f"{label}  ·  {x['time']}", value=x["done"], key="c" + x["id"])
+            if new != x["done"]:
+                x["done"] = new; save_all(); st.rerun()
+            if b.button("✕", key="x" + x["id"], help=t("common:Remove")):
+                S.tasks.remove(x); save_all(); st.rerun()
+        if not S.tasks:
+            st.caption(t("common:A little space for your next idea. Add a task above."))
+        st.caption(t("common:Tasks stay on this device. No reminders are sent.") if not S.user else "Signed in: your tasks are saved to your account.")
+        if st.button(t("common:Saved on this device") if S.saved else t("common:Save my plan")):
+            save_all(); S.saved = True; st.rerun()
+    with side:
+        st.markdown(f"<div class='card'><div class='eb'>{t('common:A gentle reminder')}</div><h3 class='ct'>{t('common:Progress isn’t always a straight line.')}</h3>"
+                    f"<p class='mute'>{t('common:Rest is part of your plan. If today changes, move a task — you’re still moving forward.')}</p>"
+                    f"<div class='ck'>♡ {t('common:Make the plan work for you.')}</div></div>", unsafe_allow_html=True)
+        caveat()
 
+def p_profile():
+    head("Your space, your choices", "Profile & settings", "Set up a few preferences for this demo. Nothing here creates an account or connects to a service.")
+    main, side = st.columns([2, 1])
+    S["plang"] = L
+    with main, st.container(key="profcard"):
+        ini = esc(S.name[:2].upper()) if S.name else "AS"
+        st.markdown(f"<div style='display:flex;gap:14px;align-items:center'><span class='avatar'>{ini}</span><div><h2 class='h2' style='margin:0'>{esc(S.name) if S.name else t('profile:A Saathi explorer')}</h2>"
+                    f"<span class='mute'>{t('profile:Demo preferences stored in this browser')}</span></div></div>", unsafe_allow_html=True)
+        nm = st.text_input(t("profile:What should we call you?"), value=S.name, placeholder=t("profile:Your name (optional)"))
+        st.selectbox(t("profile:Preferred language"), LANGS, key="plang", on_change=lambda: S.update(lang=S.plang))
+        st.caption(f"{t('profile:Language preference')}: {t('profile:Some sample descriptions may remain in English.')}")
+        if st.button("✓ " + t("profile:Save preferences")):
+            S.name = nm; save_all(); st.success(t("profile:Preferences saved"))
+    with side:
+        st.markdown(f"<div class='card'><div class='eb'>{t('profile:Account & privacy')}</div><h3 class='ct'>{t('profile:No sign-in required')}</h3>"
+                    "<p class='mute'>You can use everything without an account. Sign in only if you want your planner and preferences kept for next time. "
+                    "This is a demo, so please avoid entering sensitive personal details.</p></div>", unsafe_allow_html=True)
+        if not S.user:
+            st.page_link(P["login"], label=t("nav:Sign in") + " →")
+        caveat()
 
-def p_acct():
-    st.header(t("prof") if S.user else t("signin"))
+def auth(mode):
     if S.user:
-        st.success(f"{t('hi')}, {S.user}")
-        st.button(t("out"), on_click=lambda: S.update(user=None))
-    else:
-        tl, tr = st.tabs([t("login"), t("reg")])
-        with tl:
-            u = st.text_input(t("user"), key="lu").strip().lower(); p = st.text_input(t("pw"), type="password", key="lp")
-            if st.button(t("login")):
-                if check_login(u, p):
-                    S.user = u
-                    S.tasks = load_tasks(u) or S.tasks
-                    save_tasks(); st.rerun()
+        st.success(t("auth:Welcome back."))
+        st.page_link(P["home"], label=t("auth:Go to your home") + " →")
+        return
+    login = mode == "login"
+    st.markdown(f"<div class='ph'><div class='eb'>{t('auth:Welcome back' if login else 'auth:Start with a name')}</div>"
+                f"<h1>{t('auth:Sign in to your space' if login else 'auth:Create your demo profile')}</h1>"
+                f"<p class='mute'>{'Sign in to keep your planner and preferences.' if login else t('auth:A simple local profile helps personalize this browser experience.')}</p></div>", unsafe_allow_html=True)
+    with st.container(key="authcard"):
+        nm = "" if login else st.text_input(t("auth:Your name"), placeholder=t("auth:How should we call you?"), key="rn")
+        em = st.text_input(t("auth:Email address"), placeholder="you@example.com", key="em_" + mode).strip().lower()
+        pw = st.text_input(t("auth:Password"), type="password", placeholder=t("auth:Enter any 4 or more characters"), key="pw_" + mode)
+        if st.button(t("auth:Sign in") if login else t("auth:Create demo profile"), type="primary", use_container_width=True):
+            if login:
+                if check_login(em, pw):
+                    sign_in(em); st.rerun()
                 else:
-                    st.error(t("bad"))
-        with tr:
-            u = st.text_input(t("user"), key="ru").strip().lower(); p = st.text_input(t("pw"), type="password", key="rp")
-            if st.button(t("reg")):
-                if not u or len(p) < 6:
-                    st.error(t("short"))
-                elif register(u, p):
-                    S.user = u; save_tasks(); st.rerun()
-                else:
-                    st.error(t("taken"))
+                    st.error("Wrong email or password.")
+            elif not em or len(pw) < 4:
+                st.error("Enter an email and a password of 4 or more characters.")
+            elif register(em, pw):
+                S.name = nm.strip(); sign_in(em); st.rerun()
+            else:
+                st.error("This email is already registered. Please sign in.")
+    st.page_link(P["register" if login else "login"], label=t("auth:New here? " if login else "auth:Already have a profile? ") + t("auth:Create a demo profile" if login else "auth:Sign in") + " →")
 
+def p_login():
+    auth("login")
+
+def p_register():
+    auth("register")
 
 # ---------- navigation (each page has its own URL, so the browser Back button works) ----------
 P = {
@@ -312,15 +411,26 @@ P = {
     "sch": st.Page(p_sch, title="Schemes", url_path="schemes"),
     "car": st.Page(p_car, title="Careers", url_path="careers"),
     "plan": st.Page(p_plan, title="Planner", url_path="planner"),
-    "acct": st.Page(p_acct, title="Account", url_path="account"),
+    "profile": st.Page(p_profile, title="Profile", url_path="profile"),
+    "login": st.Page(p_login, title="Sign in", url_path="login"),
+    "register": st.Page(p_register, title="Register", url_path="register"),
 }
 pg = st.navigation(list(P.values()), position="hidden")
+NAV = [("home", ":material/explore:", "nav:Home"), ("ask", ":material/chat_bubble:", "nav:Ask Saathi"),
+       ("sch", ":material/account_balance_wallet:", "nav:Schemes & support"), ("car", ":material/work:", "nav:Careers"),
+       ("plan", ":material/calendar_month:", "nav:My planner")]
 with st.sidebar:
     st.markdown("<div class='brand'><span class='mark'>🌱</span><div>Jeevan Saathi<small>AI · A LITTLE HELP, EVERY DAY</small></div></div>"
-                f"<div class='eb' style='margin:22px 0 6px'>{t('guide')}</div>", unsafe_allow_html=True)
-    for k in ["home", "ask", "sch", "car", "plan"]:
-        st.page_link(P[k], label=t(k), icon=ICONS[k])
-    st.selectbox("🌐", list(LANGS), key="lang")
-    st.markdown(f"<div class='tp'><b>🛡️ {t('tp')}</b><br>{t('tpd')}</div>", unsafe_allow_html=True)
-    st.page_link(P["acct"], label=t("prof") if S.user else t("signin"), icon=ICONS["acct"] if S.user else ":material/login:")
+                f"<div class='eb' style='margin:22px 0 6px'>{t('shell:Your guide')}</div>", unsafe_allow_html=True)
+    for k, ic, lab in NAV:
+        st.page_link(P[k], label=t(lab), icon=ic)
+    st.selectbox(t("shell:Choose language"), LANGS, key="lang", label_visibility="collapsed")
+    st.markdown(f"<div class='tp'><b>🛡️ {t('shell:A thoughtful starting point')}</b><br>{t('shell:Examples are for guidance. Confirm details with the official service before acting.')}</div>"
+                f"<div class='eb' style='margin:6px 0'>{t('nav:Your space')}</div>", unsafe_allow_html=True)
+    st.page_link(P["profile"], label=t("nav:Profile & settings"), icon=":material/person:")
+    if S.user:
+        st.caption(S.user)
+        st.button("Sign out", on_click=sign_out, icon=":material/logout:")
+    else:
+        st.page_link(P["login"], label=t("nav:Sign in"), icon=":material/login:")
 pg.run()
